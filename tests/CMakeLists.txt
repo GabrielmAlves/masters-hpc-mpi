@@ -1,2 +1,5 @@
 add_executable(hello_mpi hello_mpi.cpp)
 target_link_libraries(hello_mpi PRIVATE MPI::MPI_CXX)
+add_executable(hello_blas hello_blas.cpp)
+target_include_directories(hello_blas PRIVATE ${CBLAS_INCLUDE_DIR})
+target_link_libraries(hello_blas PRIVATE BLAS::BLAS)
