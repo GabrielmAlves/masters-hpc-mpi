@@ -6,8 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(MPI REQUIRED)
 
-set(BLA_VENDOR OpenBLAS)
-find_package(BLAS REQUIRED)
+find_package(OpenMP REQUIRED)
+find_library(OPENBLAS_LIBRARY NAMES openblas REQUIRED)
+message(STATUS "OpenBLAS encontrado em: $OPENBLAS_LIBRARY")
 
 find_path(CBLAS_INCLUDE_DIR cblas.h REQUIRED)
 message(STATUS "cblas.h encontrado em: ${CBLAS_INCLUDE_DIR}")
