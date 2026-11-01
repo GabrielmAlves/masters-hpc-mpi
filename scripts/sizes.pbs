@@ -5,21 +5,26 @@
 #PBS -l walltime=02:00:00
 #PBS -j oe
 
-# Experiment 4: effect of the matrix size N (time should grow like N^3)
+# Experiment 4: effect of the matrix size N (time should grow like N^3).
+# Block sizes are lists, as in strong.pbs
 
 cd "${PBS_O_WORKDIR:-.}"
 source scripts/common.sh
 
 NS=${NS:-"2000 4000 6000"}
 PS=${PS:-"1 16 128"}
-BLOCK_MPI=${BLOCK_MPI:-64}
-BLOCK_BLAS=${BLOCK_BLAS:-64}
+BLOCKS_MPI=${BLOCKS_MPI:-"64 128"}
+BLOCKS_BLAS=${BLOCKS_BLAS:-"20000"}
 REPS=${REPS:-5}
 
 start_csv sizes
 for N in $NS; do
 	for P in $PS; do
-		run "$P" --mode mpi --n "$N" --block "$BLOCK_MPI" --reps "$REPS"
-		run "$P" --mode mpi_blas --n "$N" --block "$BLOCK_BLAS" --reps "$REPS"
+		for B in $BLOCKS_MPI; do
+			run "$P" --mode mpi --n "$N" --block "$B" --reps "$REPS"
+		done
+		for B in $BLOCKS_BLAS; do
+			run "$P" --mode mpi_blas --n "$N" --block "$B" --reps "$REPS"
+		done
 	done
 done

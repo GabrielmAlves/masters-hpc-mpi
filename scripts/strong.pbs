@@ -6,23 +6,30 @@
 #PBS -j oe
 
 # Experiment 2: strong scaling (fixed N, P = 1 ... 128), plus the serial blocked time as a
-# second T(1). Use the best b from blocks.pbs, e.g.
-#   qsub -v BLOCK_MPI=128,BLOCK_BLAS=6000 scripts/strong.pbs
+# second T(1). Block sizes are lists, so this job does not have to wait for blocks.pbs:
+# mpi runs with b = 64 and 128 (the L2 range of the EPYC 7662), mpi_blas with one sgemm per rank
+# (any b >= N). Override with qsub -v, e.g. qsub -v BLOCKS_MPI="128",BLOCKS_BLAS="512" scripts/strong.pbs
 
 cd "${PBS_O_WORKDIR:-.}"
 source scripts/common.sh
 
 NS=${NS:-"2000 6000"}
 PS=${PS:-"1 2 4 8 16 32 64 128"}
-BLOCK_MPI=${BLOCK_MPI:-64}
-BLOCK_BLAS=${BLOCK_BLAS:-64}
+BLOCKS_MPI=${BLOCKS_MPI:-"64 128"}
+BLOCKS_BLAS=${BLOCKS_BLAS:-"20000"}
 REPS=${REPS:-5}
 
 start_csv strong
 for N in $NS; do
-	run 1 --mode serial --kernel blocked --n "$N" --block "$BLOCK_MPI" --reps "$REPS"
+	for B in $BLOCKS_MPI; do
+		run 1 --mode serial --kernel blocked --n "$N" --block "$B" --reps "$REPS"
+	done
 	for P in $PS; do
-		run "$P" --mode mpi --n "$N" --block "$BLOCK_MPI" --reps "$REPS"
-		run "$P" --mode mpi_blas --n "$N" --block "$BLOCK_BLAS" --reps "$REPS"
+		for B in $BLOCKS_MPI; do
+			run "$P" --mode mpi --n "$N" --block "$B" --reps "$REPS"
+		done
+		for B in $BLOCKS_BLAS; do
+			run "$P" --mode mpi_blas --n "$N" --block "$B" --reps "$REPS"
+		done
 	done
 done
