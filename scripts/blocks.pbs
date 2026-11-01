@@ -1,0 +1,26 @@
+#!/bin/bash
+#PBS -N matmul_blocks
+#PBS -q par128
+#PBS -l select=1:ncpus=128:mpiprocs=128
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+# Experiment 3: effect of the block size b. mpi_blas also runs with b = N (one sgemm per rank),
+# to show whether the manual blocking helps or hurts OpenBLAS
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+N=${N:-6000}
+BS=${BS:-"32 64 128 256 512"}
+PS=${PS:-"1 16 128"}
+REPS=${REPS:-5}
+
+start_csv blocks
+for P in $PS; do
+	for B in $BS; do
+		run "$P" --mode mpi --n "$N" --block "$B" --reps "$REPS"
+		run "$P" --mode mpi_blas --n "$N" --block "$B" --reps "$REPS"
+	done
+	run "$P" --mode mpi_blas --n "$N" --block "$N" --reps "$REPS"
+done

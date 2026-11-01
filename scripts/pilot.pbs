@@ -1,0 +1,22 @@
+#!/bin/bash
+#PBS -N matmul_pilot
+#PBS -q testes
+#PBS -l select=1:ncpus=4:mpiprocs=4
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+# One repetition of the slowest configurations, to size the walltime of the big jobs.
+# P = 1 runs on the same kind of core as in par128, so the times carry over
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+start_csv pilot
+run 1 --mode serial --kernel ijk --n 2000
+run 1 --mode mpi --n 6000 --block 32
+run 1 --mode mpi --n 6000 --block 64
+run 1 --mode mpi_blas --n 6000 --block 32
+run 1 --mode mpi_blas --n 6000 --block 6000
+run 4 --mode mpi --n 6000 --block 64
+run 1 --mode mpi --n 6000 --block 64 --verify
+column -s, -t < "$OUT"

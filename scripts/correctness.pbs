@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N matmul_correctness
+#PBS -q testes
+#PBS -l select=1:ncpus=4:mpiprocs=4
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+# Experiment 1: err_rel and ok of every version. P = 3 leaves a remainder (N % P != 0),
+# and N = 6000 is not a multiple of b = 64, so border blocks are exercised too.
+# Override the lists with qsub -v, e.g. qsub -v NS="2000",PS="1 4" scripts/correctness.pbs
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+NS=${NS:-"2000 4000 6000"}
+PS=${PS:-"1 3 4"}
+BLOCK=${BLOCK:-64}
+
+start_csv correctness
+for N in $NS; do
+	run 1 --mode serial --kernel blocked --n "$N" --block "$BLOCK" --verify
+	for MODE in mpi mpi_blas; do
+		for P in $PS; do
+			run "$P" --mode "$MODE" --n "$N" --block "$BLOCK" --verify
+		done
+	done
+done
+column -s, -t < "$OUT"

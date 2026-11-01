@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N matmul_serial
+#PBS -q par128
+#PBS -l select=1:ncpus=128:mpiprocs=128
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+# Experiment 6: serial kernels ijk x ikj x blocked. Runs on a whole node only to avoid
+# interference from other jobs; ijk and ikj ignore b, so they run once per N
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+NS=${NS:-"500 1000 2000"}
+BS=${BS:-"32 64 128"}
+REPS=${REPS:-5}
+
+start_csv serial
+for N in $NS; do
+	run 1 --mode serial --kernel ijk --n "$N" --reps "$REPS"
+	run 1 --mode serial --kernel ikj --n "$N" --reps "$REPS"
+	for B in $BS; do
+		run 1 --mode serial --kernel blocked --n "$N" --block "$B" --reps "$REPS"
+	done
+done

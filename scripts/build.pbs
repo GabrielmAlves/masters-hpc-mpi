@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N matmul_build
+#PBS -q testes
+#PBS -l select=1:ncpus=4:mpiprocs=4
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+# Clean Release build + smoke tests of every mode. Submit from the project root: qsub scripts/build.pbs
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+rm -rf build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release || exit 1
+cmake --build build -j 4 || exit 1
+grep CXX_FLAGS build/src/CMakeFiles/matmul.dir/flags.make
+
+echo "=== hello_mpi: 4 processes"
+mpirun -np 4 $MPIRUN_EXTRA ./build/tests/hello_mpi
+
+echo "=== hello_blas: must print 4 threads (OpenMP OpenBLAS obeys OMP_NUM_THREADS)"
+OMP_NUM_THREADS=4 ./build/tests/hello_blas
+
+echo "=== matmul smoke tests: every line must end with ok = 1"
+start_csv build_smoke
+run 1 --mode serial --kernel ijk --n 500 --verify
+run 1 --mode serial --kernel ikj --n 500 --verify
+run 1 --mode serial --kernel blocked --n 500 --verify
+run 4 --mode mpi --n 501 --verify
+run 4 --mode mpi_blas --n 501 --verify
+run 4 --mode mpi_blas --n 501 --block 501 --verify
+column -s, -t < "$OUT"
+
+echo "=== --blas-threads 4: blas_threads column must be 4"
+mpirun -np 1 --bind-to none $MPIRUN_EXTRA "$BIN" --mode mpi_blas --n 1000 --blas-threads 4 | cut -d, -f1,5,7

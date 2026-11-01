@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N matmul_weak
+#PBS -q par128
+#PBS -l select=1:ncpus=128:mpiprocs=128
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Experiment 5: weak scaling. Work per process 2N^3/P kept constant: N_P = N_1 * cbrt(P), N_1 = 2000.
+# Each entry is P:N
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+PAIRS=${PAIRS:-"1:2000 2:2520 4:3175 8:4000 16:5040 32:6350 64:8000 128:10079"}
+BLOCK_MPI=${BLOCK_MPI:-64}
+BLOCK_BLAS=${BLOCK_BLAS:-64}
+REPS=${REPS:-5}
+
+start_csv weak
+for PAIR in $PAIRS; do
+	P=${PAIR%%:*}
+	N=${PAIR##*:}
+	run "$P" --mode mpi --n "$N" --block "$BLOCK_MPI" --reps "$REPS"
+	run "$P" --mode mpi_blas --n "$N" --block "$BLOCK_BLAS" --reps "$REPS"
+done

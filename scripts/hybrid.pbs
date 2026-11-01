@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N matmul_hybrid
+#PBS -q par128
+#PBS -l select=1:ncpus=128:mpiprocs=128
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+# Experiment 8 (optional): MPI processes x OpenBLAS threads, always 128 cores in total.
+# Each entry is P:T. b = N by default (one sgemm per rank): small sgemm calls cannot use threads.
+# Each rank gets T cores (map-by slot:PE=T); --report-bindings shows the placement in the job log
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+N=${N:-6000}
+COMBOS=${COMBOS:-"128:1 64:2 32:4 16:8 8:16"}
+BLOCK_BLAS=${BLOCK_BLAS:-$N}
+REPS=${REPS:-5}
+
+start_csv hybrid
+for COMBO in $COMBOS; do
+	P=${COMBO%%:*}
+	T=${COMBO##*:}
+	echo "[$(date +%T)] P=$P T=$T"
+	if ! OMP_NUM_THREADS=$T OPENBLAS_NUM_THREADS=$T \
+		mpirun -np "$P" --map-by "slot:PE=$T" --bind-to core --report-bindings $MPIRUN_EXTRA \
+		-x OMP_NUM_THREADS -x OPENBLAS_NUM_THREADS \
+		"$BIN" --mode mpi_blas --n "$N" --block "$BLOCK_BLAS" --blas-threads "$T" --reps "$REPS" >> "$OUT"; then
+		echo "FAILED: P=$P T=$T" >&2
+	fi
+done
