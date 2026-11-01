@@ -1,5 +1,5 @@
-if (NOT PROJECT_NAME)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 	message(FATAL_ERROR "Execute cmake na raiz do projeto: cmake -S . -B build")
 endif()
-add_executable(matmul main.cpp config.cpp matrix.cpp kernels.cpp)
+add_executable(matmul main.cpp config.cpp matrix.cpp kernels.cpp verify.cpp)
 target_include_directories(matmul PRIVATE ${PROJECT_SOURCE_DIR}/include)

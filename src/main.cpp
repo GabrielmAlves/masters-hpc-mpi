@@ -1,20 +1,21 @@
 #include "config.hpp"
 #include "matrix.hpp"
 #include "kernels.hpp"
+#include "verify.hpp"
 #include <iostream>
+#include <iomanip>
 #include <stdexcept>
-#include <cmath>
+#include <string>
 
 namespace {
-	float max_abs_diff(const matmul::Matrix& X, const matmul::Matrix& Y) {
-		float max_diff = 0.0f;
-        	for (std::size_t idx = 0; idx < X.size(); ++idx) {
-                	const float diff = std::fabs(X[idx] - Y[idx]);
-                	if (diff > max_diff) {
-                        	max_diff = diff;
-                	}
-        	}
-        	return max_diff;
+	void print_verification(const std::string& name, const matmul::VerifyResult& result) {
+		std::cout << "VERIFICACAO " << std::left << std::setw(8) << name << ": "
+			  << (result.isResultOk ? "OK   " : "FALHA")
+			  << std::scientific << std::setprecision(2)
+			  << "   erro_rel = " << result.relativeError
+			  << "   erro_abs_max = " << result.maxAbsoluteError
+			  << "   tol = " << result.tolerance
+			  << std::defaultfloat << std::endl;
 	}
 }
 
@@ -51,8 +52,12 @@ int main(int argc, char** argv) {
 			matmul::print_matrix(C_ijk, config.matrix_size, config.matrix_size, std::cout);
 		}
 
-		std::cout << "max |C_ijk - C_ikj|     = " << max_abs_diff(C_ijk, C_ikj) << '\n'
-			  << "max |C_ijk - C_blocked| = " << max_abs_diff(C_ijk, C_blocked) << std::endl;
+		// Reference is expensive (same cost as one multiplication): compute once, compare with all three
+		const std::vector<double> C_reference = matmul::reference_multiply(A, B, config.matrix_size);
+
+		print_verification("ijk", matmul::compare(C_ijk, C_reference, matmul::DEFAULT_TOLERANCE));
+		print_verification("ikj", matmul::compare(C_ikj, C_reference, matmul::DEFAULT_TOLERANCE));
+		print_verification("blocked", matmul::compare(C_blocked, C_reference, matmul::DEFAULT_TOLERANCE));
 	} catch (const std::invalid_argument& error) {
 		std::cerr << "Error: " << error.what() << std::endl;
 		return 1;

@@ -1,3 +1,6 @@
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+	message(FATAL_ERROR "Execute cmake na raiz do projeto: cmake -S . -B build")
+endif()
 add_executable(hello_mpi hello_mpi.cpp)
 target_link_libraries(hello_mpi PRIVATE MPI::MPI_CXX)
 add_executable(hello_blas hello_blas.cpp)
