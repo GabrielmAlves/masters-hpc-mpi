@@ -5,6 +5,7 @@
 #include "timing.hpp"
 #include "distribution.hpp"
 #include <mpi.h>
+#include <cblas.h>
 #include <algorithm>
 #include <exception>
 #include <iostream>
@@ -70,7 +71,7 @@ namespace {
 		row.block_size = config.block_size;
 		row.nprocs = size;
 		row.nodes = nodes;
-		row.blas_threads = 1;
+		row.blas_threads = config.mode == matmul::Mode::MpiBlas ? openblas_get_num_threads() : 1;
 		return row;
 	}
 
@@ -143,7 +144,11 @@ namespace {
 			MPI_Scatterv(A.data(), distribution.counts.data(), distribution.displs.data(), MPI_FLOAT,
 				     A_local.data(), local_count, MPI_FLOAT, 0, MPI_COMM_WORLD);
 			const double t1 = MPI_Wtime();
-			matmul::multiply_blocked(A_local, B, C_local, local_rows, n, config.block_size);
+			if (config.mode == matmul::Mode::MpiBlas) {
+				matmul::multiply_blocked_blas(A_local, B, C_local, local_rows, n, config.block_size);
+			} else {
+				matmul::multiply_blocked(A_local, B, C_local, local_rows, n, config.block_size);
+			}
 			const double t2 = MPI_Wtime();
 			MPI_Gatherv(C_local.data(), local_count, MPI_FLOAT,
 				    C.data(), distribution.counts.data(), distribution.displs.data(), MPI_FLOAT, 0, MPI_COMM_WORLD);
@@ -185,7 +190,7 @@ int main(int argc, char** argv) {
 						    std::to_string(size) + "); use mpirun -np 1");
 		}
 		if (config.mode == matmul::Mode::MpiBlas) {
-			throw std::invalid_argument("--mode " + matmul::mode_to_string(config.mode) + " is not implemented yet");
+			openblas_set_num_threads(config.blas_threads);
 		}
 
 		const int nodes = count_nodes(rank, size);

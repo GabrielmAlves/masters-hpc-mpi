@@ -7,6 +7,8 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra)
+# AVX2 (8 floats per instruction) on both WSL and Lovelace; no FMA contraction, so kernels stay bit-identical
+add_compile_options(-march=x86-64-v3 -ffp-contract=off)
 
 find_package(MPI REQUIRED)
 

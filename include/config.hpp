@@ -29,6 +29,7 @@ struct Config {
 	bool header = false;
 	unsigned seed = 42;
 	Kernel kernel = Kernel::Blocked;
+	int blas_threads = 1;	///< --blas-threads: OpenBLAS threads per process (only with --mode mpi_blas)
 };
 
 Config parse_args(int argc, char** argv); ///< Receive command line arguments and returns a Config object

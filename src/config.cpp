@@ -79,6 +79,8 @@ namespace {
 								    " (expected ijk, ikj or blocked)");
 				}
 				config.kernel = iterator->second;
+			} else if (argument == "--blas-threads") {
+				config.blas_threads = static_cast<int>(to_unsigned(next_value(argc, argv, i, argument), argument));
 			} else {
 				throw std::invalid_argument("Unknown argument: " + argument);
 			}
@@ -95,6 +97,12 @@ namespace {
 		}
 		if (config.mode != Mode::Serial && config.kernel != Kernel::Blocked) {
 			throw std::invalid_argument("--kernel only applies to --mode serial");
+		}
+		if (config.blas_threads <= 0) {
+			throw std::invalid_argument("--blas-threads must be greater than zero");
+		}
+		if (config.mode != Mode::MpiBlas && config.blas_threads != 1) {
+			throw std::invalid_argument("--blas-threads only applies to --mode mpi_blas");
 		}
 		
 		return config;
