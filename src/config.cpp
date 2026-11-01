@@ -12,6 +12,12 @@ namespace {
 		{"mpi_blas", Mode::MpiBlas}
 	};
 
+	const std::map<std::string, Kernel> kKernels = {
+		{"ijk", Kernel::Ijk},
+		{"ikj", Kernel::Ikj},
+		{"blocked", Kernel::Blocked}
+	};
+
 	std::string next_value(int argc, char** argv, int& i, const std::string& option) {
 		if (i + 1 >= argc) {
 			throw std::invalid_argument("Missing value for " + option);
@@ -63,6 +69,16 @@ namespace {
 				config.reps = static_cast<int>(to_unsigned(next_value(argc, argv, i, argument), argument));
 			} else if (argument == "--seed") {
 				config.seed = static_cast<unsigned>(to_unsigned(next_value(argc, argv, i, argument),argument));
+			} else if (argument == "--header"){
+				config.header = true;
+			} else if (argument == "--kernel") {
+				std::string value = next_value(argc, argv, i, argument);
+				auto iterator = kKernels.find(value);
+				if (iterator == kKernels.end()) {
+					throw std::invalid_argument("Invalid kernel: " + value +
+								    " (expected ijk, ikj or blocked)");
+				}
+				config.kernel = iterator->second;
 			} else {
 				throw std::invalid_argument("Unknown argument: " + argument);
 			}
@@ -77,6 +93,9 @@ namespace {
 		if (config.reps <= 0) {
 			throw std::invalid_argument("--reps must be greater than zero");
 		}
+		if (config.mode != Mode::Serial && config.kernel != Kernel::Blocked) {
+			throw std::invalid_argument("--kernel only applies to --mode serial");
+		}
 		
 		return config;
 	}
@@ -88,5 +107,14 @@ namespace {
 			case Mode::MpiBlas: return "mpi_blas";
 		}
 		throw std::invalid_argument("Unknown mode..");
+	}
+
+	std::string kernel_to_string(Kernel kernel) {
+		switch (kernel) {
+			case Kernel::Ijk: return "ijk";
+			case Kernel::Ikj: return "ikj";
+			case Kernel::Blocked: return "blocked";
+		}
+		throw std::invalid_argument("Unknown kernel..");
 	}
 } // namespace matmul
