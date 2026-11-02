@@ -3,3 +3,4 @@ results/wsl_*
 *.o[0-9]*
 results/*_local.*
 .venv/
+report/relatorio.html
