@@ -179,12 +179,3 @@ for f in results/*_[0-9]*.csv; do
 done
 python3 analysis/plots.py --results /tmp/res_main --out analysis/figures
 ```
-
-### Relatório em PDF
-
-```bash
-pip install markdown
-python3 report/build_html.py      # gera report/relatorio.html, com as figuras embutidas
-```
-
-Depois imprima o HTML em PDF com qualquer navegador. No Windows, o Edge em modo headless faz isso pela linha de comando; o comando está no cabeçalho do `report/build_html.py`.
