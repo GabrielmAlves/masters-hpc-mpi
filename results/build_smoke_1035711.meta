@@ -1,0 +1,7 @@
+job: 1035711.ada
+script: build_smoke
+date: 2026-11-01T16:08:16-03:00
+host: adano58
+commit: 3ab0661
+modules: gcc/12.2.0 openmpi/5.0.6-gcc-12.2.0 openblas/0.3.21-gcc-12.2.0 cmake/3.31.8-gcc-12.2.0
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
