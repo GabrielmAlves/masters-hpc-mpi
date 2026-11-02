@@ -1,0 +1,81 @@
+#!/bin/bash
+#PBS -N matmul_nodes
+#PBS -q paralela
+#PBS -l select=2:ncpus=128:mpiprocs=128
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+# Experiment 9: number of nodes. The paralela queue only takes jobs with >= 2 nodes / 256 cores.
+# For each P, the same run twice in the same job:
+#   packed: --map-by core, every process on the first node (communication through shared memory)
+#   spread: --map-by ppr:P/NODES:node, the processes split evenly over all nodes (through the network)
+# Then every core of every node (P = 128 x NODES), and the best hybrid layout (16 processes x 8
+# threads per node) on one node and on all nodes. The CSV column "nodes" tells the layouts apart.
+# Override with qsub -v, e.g. qsub -v NS="2000 6000",PS="32 128" scripts/nodes.pbs
+
+cd "${PBS_O_WORKDIR:-.}"
+source scripts/common.sh
+
+if [ -n "${PBS_NODEFILE:-}" ]; then
+	NODES=$(sort -u "$PBS_NODEFILE" | wc -l)
+	HOSTFILE="--hostfile $PBS_NODEFILE"
+	echo "Nodes in this job ($NODES):"
+	sort -u "$PBS_NODEFILE"
+else
+	NODES=1
+	HOSTFILE=""
+fi
+
+NS=${NS:-"6000"}
+PS=${PS:-"16 32 64 128"}
+BLOCK_MPI=${BLOCK_MPI:-128}
+REPS=${REPS:-5}
+HYB_P=${HYB_P:-16}	# processes per node in the hybrid runs
+HYB_T=${HYB_T:-8}	# OpenBLAS threads per process in the hybrid runs
+
+start_csv nodes
+mpirun --version | head -n 1
+
+# run_map P MAP ARGS...: like run() in common.sh, but with an explicit --map-by
+run_map() {
+	local procs=$1 map=$2
+	shift 2
+	echo "[$(date +%T)] P=$procs map=$map $*"
+	if ! mpirun -np "$procs" $HOSTFILE --map-by "$map" --bind-to core $MPIRUN_EXTRA \
+		-x OMP_NUM_THREADS -x OPENBLAS_NUM_THREADS \
+		"$BIN" "$@" >> "$OUT"; then
+		echo "FAILED: P=$procs map=$map $*" >&2
+	fi
+}
+
+# run_hybrid P MAP: mpi_blas with HYB_T OpenBLAS threads per process
+run_hybrid() {
+	local procs=$1 map=$2 n=$3
+	echo "[$(date +%T)] P=$procs T=$HYB_T map=$map --n $n"
+	if ! OMP_NUM_THREADS=$HYB_T OPENBLAS_NUM_THREADS=$HYB_T \
+		mpirun -np "$procs" $HOSTFILE --map-by "$map" --bind-to core $MPIRUN_EXTRA \
+		-x OMP_NUM_THREADS -x OPENBLAS_NUM_THREADS \
+		"$BIN" --mode mpi_blas --n "$n" --block 20000 --blas-threads "$HYB_T" --reps "$REPS" >> "$OUT"; then
+		echo "FAILED: P=$procs T=$HYB_T map=$map" >&2
+	fi
+}
+
+for N in $NS; do
+	for P in $PS; do
+		for MODE in "--mode mpi --block $BLOCK_MPI" "--mode mpi_blas --block 20000"; do
+			run_map "$P" core $MODE --n "$N" --reps "$REPS"
+			if [ "$NODES" -gt 1 ]; then
+				run_map "$P" "ppr:$((P / NODES)):node" $MODE --n "$N" --reps "$REPS"
+			fi
+		done
+	done
+
+	P_ALL=$((128 * NODES))
+	run_map "$P_ALL" core --mode mpi --block "$BLOCK_MPI" --n "$N" --reps "$REPS"
+	run_map "$P_ALL" core --mode mpi_blas --block 20000 --n "$N" --reps "$REPS"
+
+	run_hybrid "$HYB_P" "slot:PE=$HYB_T" "$N"
+	if [ "$NODES" -gt 1 ]; then
+		run_hybrid "$((HYB_P * NODES))" "ppr:$HYB_P:node:PE=$HYB_T" "$N"
+	fi
+done
