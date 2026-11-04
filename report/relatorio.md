@@ -14,7 +14,7 @@ O trabalho calcula **C = A × B** para matrizes quadradas densas de `float` (N×
 2. **MPI**: P processos, cada um com uma faixa de linhas, multiplicando com o kernel em blocos.
 3. **MPI + OpenBLAS**: mesma distribuição, mas a conta local é feita pela rotina `cblas_sgemm`.
 
-O objetivo é verificar se os resultados estão corretos e medir no cluster Lovelace (CENAPAD-SP) como o desempenho varia com o tamanho da matriz (N), o tamanho do bloco (b), o número de processos (P) e a divisão entre processos MPI e threads do OpenBLAS. Os experimentos incluem escalabilidade forte e fraca. Todos rodaram em **um nó de 128 núcleos**; o efeito de usar vários nós não foi medido (seção 7.4).
+O objetivo é verificar se os resultados estão corretos e medir no cluster Lovelace (CENAPAD-SP) como o desempenho varia com o tamanho da matriz (N), o tamanho do bloco (b), o número de processos (P) e a divisão entre processos MPI e threads do OpenBLAS. Os experimentos incluem escalabilidade forte e fraca, em **um nó de 128 núcleos**, e uma comparação entre um e dois nós (seção 5.7).
 
 ---
 
@@ -162,6 +162,7 @@ O valor efetivo, lido com `openblas_get_num_threads()`, foi gravado na coluna `b
 | 1035723 | Tamanho da matriz | `par128` | adano37 | 135 |
 | 1035724 | Escalabilidade fraca | `par128` | adano47 | 120 |
 | 1035725 | Híbrido | `par128` | adano37 | 25 |
+| 1035879 | Número de nós | `paralela` (2 nós) | adano08, adano14 | 100 |
 
 O experimento serial rodou na fila `serial`, com 1 núcleo reservado, num nó que pode ser compartilhado com outros jobs. Os tempos dele são comparáveis entre si, mas não diretamente com os da `par128`: por exemplo, o `blocked` com b = 128 e N = 2000 levou 0,77 s na fila `serial` e 0,71 s no job de escalabilidade forte.
 
@@ -302,6 +303,41 @@ N = 6000, `mpi_blas` com uma chamada de `sgemm` por processo, sempre 128 núcleo
 - A conta custa quase o mesmo em todas as combinações (0,075 a 0,10 s). As threads do OpenBLAS paralelizam o `sgemm` tão bem quanto os processos. **O ganho vem inteiro da comunicação**: com menos processos, B é replicada menos vezes (16 cópias em vez de 128) e o processo 0 atende menos destinos.
 - Com 8 × 16 o `t_dist` volta a subir. Uma explicação provável é a escolha de algoritmo do `MPI_Bcast` do Open MPI para poucos processos com mensagens grandes; não foi investigado.
 
+### 5.7 Número de nós
+
+N = 6000, job 1035879 na fila `paralela`, 2 nós exclusivos (adano08 e adano14). Cada P rodou no mesmo job de duas formas: **compactado**, com todos os processos no primeiro nó (`--map-by core`), e **espalhado**, com metade em cada nó (`--map-by ppr:P/2:node`). O `mpi` usa b = 128 e o `mpi_blas`, uma chamada de `sgemm` por processo. A coluna "razão" é o tempo em 2 nós dividido pelo tempo em 1 nó: abaixo de 1, espalhar é mais rápido.
+
+| P | `mpi`: 1 nó (s) | 2 nós (s) | razão | `mpi_blas`: 1 nó (s) | 2 nós (s) | razão |
+|---|---|---|---|---|---|---|
+| 16 | 1,598 | 1,642 | 1,03 | 0,597 | 0,533 | 0,89 |
+| 32 | 1,006 | 1,034 | 1,03 | 0,534 | 0,420 | 0,79 |
+| 64 | 0,832 | 0,613 | 0,74 | 0,548 | 0,379 | 0,69 |
+| 128 | 0,823 | 0,499 | 0,61 | 0,739 | **0,346** | 0,47 |
+| 256 | – | **0,471** | – | – | 0,511 | – |
+
+Decomposição das configurações principais (medianas de cada etapa, que não precisam somar exatamente a mediana do total):
+
+| Configuração | Nós | t_total (s) | `t_dist` | `t_comp` | `t_gather` | GFLOP/s |
+|---|---|---|---|---|---|---|
+| `mpi`, P = 128 | 1 | 0,823 | 0,379 | 0,229 | 0,216 | 525 |
+| `mpi`, P = 128 | 2 | 0,499 | 0,213 | 0,244 | 0,042 | 866 |
+| `mpi`, P = 256 | 2 | 0,471 | 0,266 | 0,143 | 0,053 | 917 |
+| `mpi_blas`, P = 128 | 1 | 0,739 | 0,409 | 0,105 | 0,223 | 585 |
+| `mpi_blas`, P = 128 | 2 | 0,346 | 0,204 | 0,105 | 0,035 | 1250 |
+| `mpi_blas`, P = 256 | 2 | 0,511 | 0,304 | 0,124 | 0,083 | 845 |
+| `mpi_blas`, 16 × 8 | 1 | **0,201** | 0,086 | 0,079 | 0,037 | **2152** |
+| `mpi_blas`, 32 × 8 (16 × 8 por nó) | 2 | 0,275 | 0,164 | 0,079 | 0,039 | 1572 |
+
+- **A hipótese inicial não se confirmou.** Esperávamos que passar pela rede piorasse o tempo. Na mediana, ocorreu o contrário a partir de P = 64: com P = 128, espalhar reduziu o tempo em 39% no `mpi` e em 53% no `mpi_blas`. Só o `mpi` com P ≤ 32 ficou mais lento, e apenas 3%.
+- **O ganho vem inteiro da comunicação.** O `t_comp` praticamente não muda entre os dois arranjos. Com P = 128 no `mpi_blas`, o total cai 0,393 s: 0,205 s no `t_dist` e 0,188 s no `t_gather`.
+- **Dobrar os núcleos quase não ajuda.** Passar de P = 128 espalhado para P = 256 melhora o `mpi` em 6% (0,499 s para 0,471 s) e **piora** o `mpi_blas` em 48% (0,346 s para 0,511 s). O melhor `mpi_blas` sem threads em 2 nós usa só metade dos núcleos reservados.
+- **O híbrido continua sendo o melhor, mas em 1 nó.** Com o dobro dos núcleos, 32 × 8 em 2 nós é 37% mais lento que 16 × 8 em 1 nó: o `t_comp` fica igual e o `t_dist` quase dobra. Em 2 nós, ele ainda supera o melhor `mpi_blas` sem threads (0,275 s contra 0,346 s).
+- **A primeira repetição é muito mais lenta quando há rede.** Com P = 256, ela levou 8,80 s no `mpi` e 10,24 s no `mpi_blas`, cerca de 19 e 20 vezes a mediana, com o excesso todo em `t_dist` e `t_gather`. Com P = 128 espalhado, levou 1,36 s e 1,12 s, **mais que** o compactado na mesma repetição (0,82 s e 0,80 s). A mediana esconde esse custo: quem faz uma única multiplicação por execução não recebe o ganho da tabela. A causa provável é o estabelecimento das conexões no primeiro uso; não foi investigada.
+
+**Possíveis causas (hipóteses não testadas).** Este experimento não isola o efeito da rede, porque espalhar também divide pela metade a carga em cada nó: com P = 128, cada nó guarda 64 cópias de B em vez de 128 e tem o dobro de banda de memória por processo. O `t_dist` é compatível com isso, pois P espalhado fica próximo de, ou abaixo de, P/2 compactado (0,204 s contra 0,258 s no `mpi_blas` com P = 128). Já o `t_gather` cai muito mais do que essa explicação prevê (0,035 s contra 0,147 s), o que sugere que o Open MPI escolhe outro algoritmo ou outro transporte quando há mais de um nó. Não registramos essa escolha. O `t_comp` do `sgemm` também parou de cair (0,105 s para 0,124 s entre P = 128 e 256), enquanto o do kernel próprio continua caindo (0,244 s para 0,143 s). Uma explicação possível é o empacotamento de B dentro do `sgemm`, cujo custo não diminui com P, porque cada processo multiplica pela matriz B inteira.
+
+**Conferência.** As configurações compactadas reproduzem os jobs de 1 nó (1035722 e 1035725) com diferença de até 8%: por exemplo, 0,823 s contra 0,833 s no `mpi` com P = 128 e 0,201 s contra 0,187 s no 16 × 8.
+
 ---
 
 ## 6. Discussão
@@ -317,7 +353,7 @@ N = 6000, `mpi_blas` com uma chamada de `sgemm` por processo, sempre 128 núcleo
 
 **Memória.** Replicar B custa P·N²·4 bytes. Para N = 10079 e P = 128 isso dá 52 GB num nó, que ainda cabe nos 502 GiB, mas limita o N máximo e consome banda de memória. O modo híbrido reduz esse custo pelo fator T.
 
-**Efeito da rede entre nós.** Não foi medido (seção 7.4). Como todos os experimentos usam um nó, a comunicação MPI passa pela memória compartilhada. Entre nós, o `Bcast` e o `Gatherv` passariam pela rede, com mais latência e menos banda, e a saturação observada aconteceria com ainda menos processos. Isso reforça a necessidade de algoritmos com comunicação distribuída.
+**Efeito da rede entre nós.** Ao contrário do esperado, usar dois nós não piorou o tempo mediano na maioria dos casos: com P ≥ 64 ele melhorou (seção 5.7). Isso sugere que, para esta estratégia, o limite dentro de um nó cheio não é só o volume de dados, mas também a forma como eles chegam a 128 processos no mesmo nó. O ganho, porém, tem limites claros: dobrar os núcleos quase não ajuda, o `mpi_blas` com P = 256 piora e a primeira repetição pode ser 20 vezes mais lenta. O melhor resultado continua sendo o híbrido em um nó. Isso reforça a necessidade de algoritmos com comunicação distribuída.
 
 ---
 
@@ -337,7 +373,12 @@ Os jobs de blocos, forte e tamanhos rodaram no mesmo nó (adano37), em momentos 
 
 ### 7.4 Número de nós
 
-O enunciado pede o impacto do número de nós, mas **todos os experimentos usaram um nó**. No Lovelace, as filas `testes`, `par16` e `par128` aceitam só 1 nó por job, e a fila `paralela`, a única com vários nós, exige no mínimo 2 nós e 256 núcleos. O programa já registra o número de nós em cada linha do CSV (coluna `nodes`, obtida com `MPI_Get_processor_name`), e os scripts funcionam com `select` de vários nós. Faltou executar na `paralela`.
+O experimento de nós (seção 5.7) é pequeno: um único job, um único par de nós (adano08 e adano14), N = 6000 e no máximo 2 nós, porque a fila `paralela` é a única com vários nós e exige no mínimo 2 nós e 256 núcleos. Ele tem quatro limitações:
+
+- **Não isola a rede**: espalhar os processos também reduz a carga em cada nó, e os dois efeitos aparecem juntos.
+- **Não caracteriza a rede**: não medimos latência nem banda, nem registramos o transporte e o algoritmo de coletiva usados pelo Open MPI.
+- **Ligação não conferida**: este job não usou `--report-bindings`, então a ligação dos processos e threads não foi confirmada diretamente, como foi no híbrido de 1 nó.
+- **Variabilidade**: a rede é compartilhada com outros jobs, e as 5 repetições de um único job não medem a variação entre execuções. A primeira repetição das execuções espalhadas é um valor atípico sistemático (até 20 vezes a mediana), e por isso os ganhos da seção 5.7 valem depois do aquecimento.
 
 ---
 
@@ -350,13 +391,14 @@ Os principais resultados:
 - o melhor bloco do kernel próprio é o que mantém os três blocos na L2 (b de 64 a 256);
 - o OpenBLAS é 4,5 vezes mais rápido que o kernel próprio e funciona melhor sem blocagem externa;
 - a escalabilidade forte é quase ideal até P = 8 e satura em P = 64 (kernel próprio) ou P = 32 (OpenBLAS), por causa da comunicação centralizada;
-- a melhor configuração do nó foi a híbrida, 16 processos × 8 threads, com 2,3 TFLOP/s.
+- a melhor configuração do nó foi a híbrida, 16 processos × 8 threads, com 2,3 TFLOP/s;
+- em dois nós, espalhar os processos reduziu o tempo mediano em até 53% com P = 128, mas usar 256 núcleos quase não ajudou, e a melhor configuração medida continuou sendo a híbrida em um nó.
 
 **Melhorias possíveis:**
 - **Algoritmos com comunicação distribuída** (SUMMA ou Cannon): B também é dividida, a memória por processo cai de N² para N²/P e a comunicação deixa de passar pelo processo 0.
 - **Sobrepor comunicação e cálculo** com coletivas não bloqueantes (`MPI_Ibcast`, `MPI_Iscatterv`), começando a multiplicar as primeiras faixas enquanto as outras chegam.
 - **Modo híbrido por padrão**: um processo por domínio NUMA ou por par de domínios, com threads do OpenBLAS dentro.
-- **Medir em vários nós** pela fila `paralela`, para quantificar o efeito da rede.
+- **Isolar o efeito da rede**: medir latência e banda entre os nós, registrar o transporte e o algoritmo de coletiva usados pelo Open MPI e repetir com mais nós e em mais de um job.
 
 ---
 
@@ -370,7 +412,7 @@ qsub scripts/build.pbs
 
 # experimentos (da raiz do projeto)
 qsub scripts/correctness.pbs
-qsub scripts/strong.pbs      # idem: serial, blocks, sizes, weak, hybrid
+qsub scripts/strong.pbs      # idem: serial, blocks, sizes, weak, hybrid, nodes
 
 # execução avulsa
 mpirun -np 4 ./build/src/matmul --mode mpi_blas --n 2000 --block 2000 --reps 5 --verify --header
